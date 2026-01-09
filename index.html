@@ -605,12 +605,12 @@
           <div class="ai-header">
             <div class="ai-orb"><span class="ai-symbol">✦</span></div>
             <div class="ai-title-block">
-              <h2 class="ai-title">Ask JestingsHub</h2>
-              <p class="ai-subtitle">Search documents, find contacts, or get help organizing</p>
+              <h2 class="ai-title">🤖 Ask JestingsHub AI</h2>
+              <p class="ai-subtitle">Ask questions about your documents, providers, and reminders</p>
             </div>
           </div>
           <div class="ai-input-wrapper">
-            <input class="ai-input" id="dashboardSearch" type="text" placeholder="Search documents, providers, reminders..." onkeydown="handleSearchKeydown(event)">
+            <input class="ai-input" id="dashboardSearch" type="text" placeholder="Ask me anything... 'When does the passport expire?'" onkeydown="handleSearchKeydown(event)">
             <button class="ai-submit" onclick="openSearchFromDashboard()">→</button>
           </div>
           <div class="quick-actions">
@@ -2118,15 +2118,8 @@
     // Open Search from Dashboard
     function openSearchFromDashboard() {
       const query = document.getElementById('dashboardSearch').value.trim();
-      document.getElementById('dashboardView').classList.add('hidden');
-      document.getElementById('searchView').classList.add('active');
-      document.getElementById('searchInputLarge').value = query;
-      document.getElementById('searchInputLarge').focus();
       if (query) {
-        performSearch();
-      } else {
-        document.getElementById('searchEmpty').style.display = 'block';
-        document.getElementById('searchResults').style.display = 'none';
+        askAI(query);
       }
     }
 
@@ -2134,6 +2127,84 @@
     function handleSearchKeydown(event) {
       if (event.key === 'Enter') {
         openSearchFromDashboard();
+      }
+    }
+
+    // Ask AI (Claude) - via server
+    async function askAI(query) {
+      // Show loading state
+      showAIModal('Thinking...', true);
+      
+      // Build context from all data
+      const docsContext = documents.map(d => {
+        const cat = categories.find(c => c.id === d.categoryId);
+        return `- ${d.name} (Category: ${cat ? cat.name + ' - ' + cat.subtitle : 'Unknown'}, Notes: ${d.notes || 'none'}, Added: ${formatDate(d.createdAt)})`;
+      }).join('\n');
+      
+      const providersContext = providers.map(p => 
+        `- ${p.name} (${p.type}): Phone: ${p.phone || 'none'}, Email: ${p.email || 'none'}, Notes: ${p.notes || 'none'}`
+      ).join('\n');
+      
+      const remindersContext = reminders.filter(r => !r.completed).map(r => {
+        const cat = categories.find(c => c.id === r.categoryId);
+        return `- ${r.title}: Due ${r.date}, Category: ${cat ? cat.name : 'none'}, Notes: ${r.notes || 'none'}`;
+      }).join('\n');
+
+      try {
+        const response = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query,
+            documents: docsContext || 'No documents yet',
+            providers: providersContext || 'No providers yet',
+            reminders: remindersContext || 'No reminders yet'
+          })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+          showAIModal('Error: ' + data.error, false);
+          return;
+        }
+        
+        showAIModal(data.answer, false);
+      } catch (err) {
+        console.error('AI Error:', err);
+        showAIModal('Sorry, I couldn\'t connect to the AI. Please try again.', false);
+      }
+    }
+
+    // Show AI Response Modal
+    function showAIModal(message, isLoading) {
+      let modal = document.getElementById('aiModal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'aiModal';
+        modal.className = 'modal active';
+        modal.innerHTML = `
+          <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+              <span class="modal-title">🤖 JestingsHub AI</span>
+              <button class="modal-close" onclick="closeModal('aiModal')">×</button>
+            </div>
+            <div id="aiResponse" style="padding: 20px; line-height: 1.6; white-space: pre-wrap;"></div>
+            <div style="padding: 0 20px 20px;">
+              <button class="btn btn-primary" onclick="closeModal('aiModal')" style="width: 100%;">Got it</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+      } else {
+        modal.classList.add('active');
+      }
+      
+      const responseDiv = document.getElementById('aiResponse');
+      if (isLoading) {
+        responseDiv.innerHTML = '<div style="text-align: center;">🤔 Thinking...</div>';
+      } else {
+        responseDiv.textContent = message;
       }
     }
 
